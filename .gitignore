@@ -1,0 +1,17 @@
+# Tutorial output written into the working directory
+*.nwb
+*.nwb.zarr/
+*.npy
+mylab.*.yaml
+ecog.*.yaml
+test_multicontainerinterface.*.yaml
+
+# Environments
+.venv/
+.scratch/
+__pycache__/
+*.py[cod]
+*.egg-info/
+
+# OS
+.DS_Store
