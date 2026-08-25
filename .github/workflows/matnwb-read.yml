@@ -1,0 +1,87 @@
+name: MatNWB reads the Zarr v3 stores
+
+# Cross-backend compatibility probe: write NWB Zarr v3 stores with PyNWB (via the
+# hdmf-zarr zarr-v3-migration branch), then open every one of them with MatNWB's
+# Zarr v3 reader. Stores that MatNWB cannot yet read are listed, with reasons, in
+# ci/matnwb_known_failures.txt.
+#
+# Both sides track moving branches, so this also runs weekly to catch breakage that
+# lands upstream rather than here.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+  schedule:
+    - cron: "0 6 * * 1"  # Mondays, 06:00 UTC
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  MATNWB_REF: zarr-support/5-zarr3-reader
+  MATLAB_RELEASE: R2025b
+
+jobs:
+  read-stores:
+    name: Write with PyNWB, read with MatNWB
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out this repository
+        uses: actions/checkout@v4
+
+      - name: Check out MatNWB (Zarr v3 reader branch)
+        uses: actions/checkout@v4
+        with:
+          repository: NeurodataWithoutBorders/matnwb
+          ref: ${{ env.MATNWB_REF }}
+          path: matnwb
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install the tutorial environment
+        # Pulls hdmf-zarr from its zarr-v3-migration branch; see pyproject.toml.
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -e .
+
+      - name: Report resolved versions
+        run: python -m pip list | grep -Ei "^(pynwb|hdmf|hdmf-zarr|zarr|numcodecs|numpy) "
+
+      - name: Write the Zarr v3 stores
+        # Also asserts that every store declares zarr_format 3 before MatNWB sees it.
+        run: python scripts/run_zarr_v3_tutorials.py --keep-output stores
+
+      - name: Set up MATLAB
+        uses: matlab-actions/setup-matlab@v3
+        with:
+          release: ${{ env.MATLAB_RELEASE }}
+
+      - name: Install MatBox
+        uses: ehennestad/matbox-actions/install-matbox@v1
+
+      - name: Read every store with nwbRead
+        uses: matlab-actions/run-command@v3
+        with:
+          # One MATLAB session: installRequirements pulls zarr-matlab and
+          # hdmf-zarr-matlab (listed in matnwb/requirements.txt) and adds them to the
+          # in-session path, so there is no need to persist it with savepath.
+          command: |
+            addpath(genpath("matnwb"));
+            matbox.installRequirements("matnwb", SaveSearchPath=false, AgreeToLicenses=true);
+            addpath("scripts");
+            verifyStoresReadable("stores", KnownFailureFile="ci/matnwb_known_failures.txt");
+
+      - name: Upload the stores when the read check fails
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: zarr-v3-stores
+          path: stores/
+          retention-days: 7

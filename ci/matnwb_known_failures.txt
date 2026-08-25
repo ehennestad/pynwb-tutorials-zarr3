@@ -1,0 +1,26 @@
+# Stores that MatNWB's Zarr v3 reader cannot currently open.
+#
+# One store name per line; text after "#" is the reason. CI fails if a store outside
+# this list fails, and also if a store on this list starts passing -- remove the entry
+# when that happens.
+#
+# Verified against matnwb zarr-support/5-zarr3-reader on 2026-08-25.
+
+# MeaningsTable.target is a soft link that the reader hands back as a
+# types.untyped.ObjectView instead of dereferencing it to the
+# types.hdmf_common.VectorData the property validator expects.
+#   NWB:CheckType:InvalidNeurodataType at /events/scored_behaviors/meanings_tables/annotation_meanings
+basics_tutorial.nwb.zarr
+
+# Expected. This store is a deliberately synthesised pre-2.9 file: the tutorial writes a
+# string Device.model attribute to demonstrate the legacy upgrade path. PyNWB upgrades it
+# to a DeviceModel on read with a warning; MatNWB has no such upgrade and rejects the char.
+#   NWB:CheckType:InvalidNeurodataType -- `model` expected types.core.DeviceModel, got char
+legacy_device_model.nwb.zarr
+
+# The store is readable; the relative external-link path is resolved against the process
+# working directory rather than against the directory containing the store, so
+# "../raw_data.nwb.zarr" is looked up in the wrong place. Reading it with the working
+# directory set inside the store succeeds, which confirms the cause.
+#   NWB:ExternalLink:TargetNotFound -- ../raw_data.nwb.zarr does not exist
+processed_data.nwb.zarr

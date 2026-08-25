@@ -65,6 +65,33 @@ working directory:
 
 All output names carry the `.nwb.zarr` suffix.
 
+## Cross-backend check: reading the stores with MatNWB
+
+A [workflow](.github/workflows/matnwb-read.yml) writes the stores with PyNWB and then opens every
+one of them with [MatNWB](https://github.com/NeurodataWithoutBorders/matnwb)'s Zarr v3 reader
+(branch `zarr-support/5-zarr3-reader`, which pulls in `zarr-matlab` and `hdmf-zarr-matlab`). It
+runs on push, on pull requests, and weekly — both sides track moving branches, so most breakage
+will arrive from upstream rather than from a change here.
+
+Stores MatNWB cannot yet read are listed with reasons in
+[`ci/matnwb_known_failures.txt`](ci/matnwb_known_failures.txt). The check fails if a store outside
+that list fails, and also if a listed store starts passing, so stale entries get removed rather
+than quietly masking a fix.
+
+To run it locally, with MatNWB and its requirements on your MATLAB path:
+
+```matlab
+verifyStoresReadable("stores", KnownFailureFile="ci/matnwb_known_failures.txt")
+```
+
+As of the last run, 28 of 31 stores read successfully. The three exceptions:
+
+| Store | Cause |
+| --- | --- |
+| `basics_tutorial.nwb.zarr` | `MeaningsTable.target` is returned as a `types.untyped.ObjectView` rather than dereferenced to the `VectorData` the property validator expects. |
+| `legacy_device_model.nwb.zarr` | Expected. The store is a deliberately synthesised pre-2.9 file with a string `Device.model`; PyNWB upgrades it on read, MatNWB has no such upgrade. |
+| `processed_data.nwb.zarr` | The store is readable. MatNWB resolves the relative external-link path against the process working directory instead of the directory containing the store, so `../raw_data.nwb.zarr` is looked up in the wrong place. |
+
 ## What changed relative to upstream
 
 Most edits are mechanical: `NWBHDF5IO` → `NWBZarrIO`, `*.nwb` → `*.nwb.zarr`, `H5DataIO` →
