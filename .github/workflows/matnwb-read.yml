@@ -58,6 +58,12 @@ jobs:
         # Also asserts that every store declares zarr_format 3 before MatNWB sees it.
         run: python scripts/run_zarr_v3_tutorials.py --keep-output stores
 
+      - name: Install the codec libraries zarr-matlab links against
+        # zarr-matlab decompresses chunks through a MEX extension that has to be built
+        # against libzstd and libblosc. Zarr v3 compresses with Zstd by default, so
+        # without this every store fails to read with zarr:MissingMex.
+        run: sudo apt-get update && sudo apt-get install -y libzstd-dev libblosc-dev
+
       - name: Set up MATLAB
         uses: matlab-actions/setup-matlab@v3
         with:
@@ -72,9 +78,14 @@ jobs:
           # One MATLAB session: installRequirements pulls zarr-matlab and
           # hdmf-zarr-matlab (listed in matnwb/requirements.txt) and adds them to the
           # in-session path, so there is no need to persist it with savepath.
+          # zarr-matlab ships its MEX codecs unbuilt, so build them before reading.
           command: |
             addpath(genpath("matnwb"));
             matbox.installRequirements("matnwb", SaveSearchPath=false, AgreeToLicenses=true);
+            zarrRoot = fileparts(fileparts(which("zarr.open")));
+            fprintf("Building zarr-matlab MEX codecs in %s\n", zarrRoot);
+            addpath(fullfile(zarrRoot, "tools"));
+            build_mex();
             addpath("scripts");
             verifyStoresReadable("stores", KnownFailureFile="ci/matnwb_known_failures.txt");
 
