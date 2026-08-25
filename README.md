@@ -84,13 +84,19 @@ To run it locally, with MatNWB and its requirements on your MATLAB path:
 verifyStoresReadable("stores", KnownFailureFile="ci/matnwb_known_failures.txt")
 ```
 
-As of the last run, 28 of 31 stores read successfully. The three exceptions:
+As of the last run, 29 of 31 stores read successfully. The two exceptions:
 
 | Store | Cause |
 | --- | --- |
-| `basics_tutorial.nwb.zarr` | `MeaningsTable.target` is returned as a `types.untyped.ObjectView` rather than dereferenced to the `VectorData` the property validator expects. |
 | `legacy_device_model.nwb.zarr` | Expected. The store is a deliberately synthesised pre-2.9 file with a string `Device.model`; PyNWB upgrades it on read, MatNWB has no such upgrade. |
 | `processed_data.nwb.zarr` | The store is readable. MatNWB resolves the relative external-link path against the process working directory instead of the directory containing the store, so `../raw_data.nwb.zarr` is looked up in the wrong place. |
+
+Two details matter for reproducing this outside CI. `nwbRead` is called **without**
+`ignorecache`, because several stores embed extension schemas (`mylab`, `ecog`,
+`test_multicontainerinterface`) whose classes exist only once generated from the store
+being read. And the generated-class folder is emptied first: a populated folder, or a
+MatNWB checkout still holding classes from earlier work, makes those stores appear to
+read on a machine where a clean checkout would fail.
 
 ## What changed relative to upstream
 

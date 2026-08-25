@@ -44,6 +44,8 @@ jobs:
         uses: actions/setup-python@v5
         with:
           python-version: "3.11"
+          cache: pip
+          cache-dependency-path: pyproject.toml
 
       - name: Install the tutorial environment
         # Pulls hdmf-zarr from its zarr-v3-migration branch; see pyproject.toml.
@@ -68,6 +70,9 @@ jobs:
         uses: matlab-actions/setup-matlab@v3
         with:
           release: ${{ env.MATLAB_RELEASE }}
+          # Installing MATLAB is by far the slowest step; the cache is keyed on the
+          # release, so it only re-downloads when MATLAB_RELEASE changes.
+          cache: true
 
       - name: Install MatBox
         uses: ehennestad/matbox-actions/install-matbox@v1
@@ -79,6 +84,10 @@ jobs:
           # hdmf-zarr-matlab (listed in matnwb/requirements.txt) and adds them to the
           # in-session path, so there is no need to persist it with savepath.
           # zarr-matlab ships its MEX codecs unbuilt, so build them before reading.
+          #
+          # These clones are deliberately not cached. They track moving branches, and
+          # this workflow exists to notice when upstream changes break the round-trip --
+          # a cached clone would hide exactly what it is meant to catch.
           command: |
             addpath(genpath("matnwb"));
             matbox.installRequirements("matnwb", SaveSearchPath=false, AgreeToLicenses=true);

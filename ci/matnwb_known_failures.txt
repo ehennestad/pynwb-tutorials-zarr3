@@ -6,12 +6,6 @@
 #
 # Verified against matnwb zarr-support/5-zarr3-reader on 2026-08-25.
 
-# MeaningsTable.target is a soft link that the reader hands back as a
-# types.untyped.ObjectView instead of dereferencing it to the
-# types.hdmf_common.VectorData the property validator expects.
-#   NWB:CheckType:InvalidNeurodataType at /events/scored_behaviors/meanings_tables/annotation_meanings
-basics_tutorial.nwb.zarr
-
 # Expected. This store is a deliberately synthesised pre-2.9 file: the tutorial writes a
 # string Device.model attribute to demonstrate the legacy upgrade path. PyNWB upgrades it
 # to a DeviceModel on read with a warning; MatNWB has no such upgrade and rejects the char.
