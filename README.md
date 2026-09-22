@@ -11,10 +11,11 @@ the neurodata types built, the narrative, the section structure -- follows upstr
 ## Requirements
 
 Zarr format 3 output is **not available in any released `hdmf-zarr`**: the latest release
-(0.13.0) pins `zarr<3.0`, which writes Zarr format 2. Format 3 requires the unreleased
-[`zarr-v3-migration`](https://github.com/hdmf-dev/hdmf-zarr/pull/325) branch, which
-`pyproject.toml` pins directly. Expect this pin to be replaced by a normal version
-constraint once that PR is released.
+(0.13.0) pins `zarr<3.0`, which writes Zarr format 2. Format 3 requires hdmf-zarr 0.14.0,
+which is [merged](https://github.com/hdmf-dev/hdmf-zarr/pull/325) on the `dev` branch but
+not yet published, so `pyproject.toml` pins that branch directly. Expect this pin to be
+replaced by `hdmf-zarr>=0.14.0` once it is on PyPI. hdmf-zarr 0.14.0 requires Python 3.12
+or newer.
 
 ```bash
 python3 -m venv .venv
@@ -84,12 +85,11 @@ To run it locally, with MatNWB and its requirements on your MATLAB path:
 verifyStoresReadable("stores", KnownFailureFile="ci/matnwb_known_failures.txt")
 ```
 
-As of the last run, 29 of 31 stores read successfully. The two exceptions:
+As of the last run, 30 of 31 stores read successfully. The one exception:
 
 | Store | Cause |
 | --- | --- |
 | `legacy_device_model.nwb.zarr` | Expected. The store is a deliberately synthesised pre-2.9 file with a string `Device.model`; PyNWB upgrades it on read, MatNWB has no such upgrade. |
-| `processed_data.nwb.zarr` | The store is readable. MatNWB resolves the relative external-link path against the process working directory instead of the directory containing the store, so `../raw_data.nwb.zarr` is looked up in the wrong place. |
 
 Two details matter for reproducing this outside CI. `nwbRead` is called **without**
 `ignorecache`, because several stores embed extension schemas (`mylab`, `ecog`,
@@ -106,10 +106,10 @@ passed on write so a tutorial can be re-run over an existing store. Three change
 calling out:
 
 - **Compressors are Zarr v3 codecs.** `compression="gzip", compression_opts=4` becomes
-  `compressor=GzipCodec(level=4)`; a Blosc compressor comes from `zarr.codecs.BloscCodec` rather
+  `compressors=GzipCodec(level=4)`; a Blosc compressor comes from `zarr.codecs.BloscCodec` rather
   than `numcodecs.Blosc`.
 - **Zarr compresses by default.** zarr-python 3 applies Zstd unless told otherwise, so
-  `plot_iterative_write.py` passes `compressor=False` for the cases the tutorial presents as
+  `plot_iterative_write.py` passes `compressors=False` for the cases the tutorial presents as
   uncompressed. Without that opt-out its chunk-size comparison collapses — the 80 MB
   large-chunk case comes out under 1 MB and the point of the section disappears.
 - **Store size is a directory size.** `plot_iterative_write.py` sums the files under the store
@@ -119,7 +119,7 @@ calling out:
 
 | Tutorial | Omitted | Reason |
 | --- | --- | --- |
-| `advanced_io/plot_iterative_write.py` | "Alternative Approach: User-defined dataset write" | `ZarrDataIO` takes only `data`, `chunks`, `fillvalue`, `compressor`, `filters` and `link_data`. It cannot declare a dataset by `shape`/`dtype` and allocate it empty, and Zarr arrays have no `maxshape`. |
+| `advanced_io/plot_iterative_write.py` | "Alternative Approach: User-defined dataset write" | `ZarrDataIO` takes only `data`, `chunks`, `shards`, `fillvalue`, `compressors`, `filters`, `serializer` and `link_data`. It cannot declare a dataset by `shape`/`dtype` and allocate it empty, and Zarr arrays have no `maxshape`. |
 | `advanced_io/plot_linking_data.py` | "Automatically splitting large data across multiple HDF5 files" | Relies on the h5py `family` driver and on empty-dataset allocation. A Zarr store is already split across many chunk files, so the problem does not arise. |
 | `general/plot_external_resources.py` | The `HERD.get_object_entities` call | hdmf-zarr does not preserve the integer index fields of HERD's compound datasets on round-trip, so `objects.files_idx` reads back as `float64` and the row lookup rejects it. Verified on both hdmf-zarr 0.13.0 (zarr 2, where the compound dataset comes back as `object` dtype) and the `zarr-v3-migration` branch — a general Zarr-backend limitation, not a Zarr v3 regression. |
 
