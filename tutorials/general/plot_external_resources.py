@@ -167,18 +167,11 @@ read_herd.to_dataframe()
 read_herd.keys.to_dataframe()
 
 ###############################################################################
-# .. warning::
-#
-#    On the HDF5 backend you would now call
-#    :py:meth:`~hdmf.common.resources.HERD.get_object_entities` to view the entities annotated on a
-#    single object. That call does not work on a HERD read back from a Zarr store: hdmf-zarr does not
-#    preserve the integer index fields of HERD's compound datasets on round-trip, so ``objects`` comes
-#    back with ``files_idx`` as ``float64`` and the row lookup rejects it. This affects both the
-#    released hdmf-zarr (which stores the compound dataset as ``object`` dtype) and the
-#    ``zarr-v3-migration`` branch, so it is a general Zarr-backend limitation rather than something
-#    introduced by Zarr v3. The HERD itself is written and read correctly -- only this accessor fails.
-#
-# ``read_herd.to_dataframe()`` above shows the same annotation as part of the flattened table.
+# :py:meth:`~hdmf.common.resources.HERD.get_object_entities` returns the entities annotated on a
+# single object as a :py:class:`~pandas.DataFrame`. Here we view the species annotation stored for
+# the subject:
+
+read_herd.get_object_entities(container=read_nwbfile.subject)
 
 ###############################################################################
 # Close the file once you are done reading from it.

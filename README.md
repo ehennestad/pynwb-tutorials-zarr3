@@ -117,7 +117,6 @@ calling out:
 | --- | --- | --- |
 | `advanced_io/plot_iterative_write.py` | "Alternative Approach: User-defined dataset write" | `ZarrDataIO` takes only `data`, `chunks`, `shards`, `fillvalue`, `compressors`, `filters`, `serializer` and `link_data`. It cannot declare a dataset by `shape`/`dtype` and allocate it empty, and Zarr arrays have no `maxshape`. |
 | `advanced_io/plot_linking_data.py` | "Automatically splitting large data across multiple HDF5 files" | Relies on the h5py `family` driver and on empty-dataset allocation. A Zarr store is already split across many chunk files, so the problem does not arise. |
-| `general/plot_external_resources.py` | The `HERD.get_object_entities` call | hdmf-zarr does not preserve the integer index fields of HERD's compound datasets on round-trip, so `objects.files_idx` reads back as `float64` and the row lookup rejects it. Verified on both hdmf-zarr 0.13.0 (zarr 2, where the compound dataset comes back as `object` dtype) and the `zarr-v3-migration` branch — a general Zarr-backend limitation, not a Zarr v3 regression. |
 
 Each omission is replaced in-file by a note explaining what was dropped and why.
 
