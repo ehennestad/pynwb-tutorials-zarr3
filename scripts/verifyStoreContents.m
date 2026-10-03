@@ -32,6 +32,14 @@ function verifyStoreContents(storeDirectory, options)
 %    - JUnitFile (string) -
 %      JUnit XML report of every check. Default: none.
 %
+%    - StoreUrl (string) -
+%      URL at which storeDirectory is served over HTTP. When given, each store
+%      is read from "<StoreUrl>/<store>" instead of from disk; storeDirectory
+%      is then only used to list the stores. Default: none.
+%
+%    - Title (string) -
+%      Heading of the job summary table. Default: "MatNWB content check".
+%
 % The function throws NWB:Zarr3Compat:UnexpectedResult if a check outside the
 % known-failure list fails, or if a check on that list passes and its entry is
 % therefore stale.
@@ -42,6 +50,8 @@ function verifyStoreContents(storeDirectory, options)
         options.KnownFailureFile (1,1) string = ""
         options.SummaryFile (1,1) string = string(getenv("GITHUB_STEP_SUMMARY"))
         options.JUnitFile (1,1) string = ""
+        options.StoreUrl (1,1) string = ""
+        options.Title (1,1) string = "MatNWB content check"
     end
 
     import matlab.unittest.TestRunner
@@ -57,8 +67,13 @@ function verifyStoreContents(storeDirectory, options)
     % mangled name and its real name is recovered from the value.
     storeParameters = struct();
     for storeName = storeNames'
+        if options.StoreUrl == ""
+            storePath = fullfile(storeDirectory, storeName);
+        else
+            storePath = strip(options.StoreUrl, "right", "/") + "/" + storeName;
+        end
         storeParameters.(matlab.lang.makeValidName(storeName)) = struct( ...
-            "StorePath", fullfile(storeDirectory, storeName), ...
+            "StorePath", storePath, ...
             "ManifestPath", fullfile(options.ManifestDirectory, storeName + ".manifest.json"), ...
             "ClassDirectory", classDirectory);
     end
@@ -76,7 +91,7 @@ function verifyStoreContents(storeDirectory, options)
     results = runner.run(suite);
 
     outcomes = classifyResults(suite, results, storeParameters, knownFailures);
-    reportOutcomes(outcomes, knownFailures, options.SummaryFile)
+    reportOutcomes(outcomes, knownFailures, options.SummaryFile, options.Title)
 end
 
 function storeNames = storesWithManifests(storeDirectory, manifestDirectory)
@@ -128,7 +143,7 @@ function outcomes = classifyResults(suite, results, storeParameters, knownFailur
     outcomes = table(store, check, passed, isKnown, 'VariableNames', ["Store", "Check", "Passed", "IsKnown"]);
 end
 
-function reportOutcomes(outcomes, knownFailures, summaryFile)
+function reportOutcomes(outcomes, knownFailures, summaryFile, title)
     unexpected = outcomes(~outcomes.Passed & ~outcomes.IsKnown, :);
     stale = staleEntries(outcomes, knownFailures);
 
@@ -136,7 +151,7 @@ function reportOutcomes(outcomes, knownFailures, summaryFile)
         height(outcomes), sum(~outcomes.Passed & outcomes.IsKnown));
 
     if summaryFile ~= ""
-        writeSummary(outcomes, summaryFile)
+        writeSummary(outcomes, summaryFile, title)
     end
 
     messages = strings(0, 1);
@@ -182,7 +197,7 @@ function knownFailures = readKnownFailures(knownFailureFile)
     knownFailures = reshape(knownFailures, [], 1);
 end
 
-function writeSummary(outcomes, summaryFile)
+function writeSummary(outcomes, summaryFile, title)
 % writeSummary - Append a store x check Markdown table for the GitHub job summary.
     fileId = fopen(summaryFile, "a");
     if fileId == -1
@@ -194,7 +209,7 @@ function writeSummary(outcomes, summaryFile)
 
     checks = unique(outcomes.Check, "stable");
     stores = unique(outcomes.Store);
-    fprintf(fileId, "## MatNWB content check\n\n");
+    fprintf(fileId, "## %s\n\n", title);
     fprintf(fileId, "| Store | %s |\n", strjoin("`" + checks + "`", " | "));
     fprintf(fileId, "| --- |%s\n", strjoin(repmat(" --- |", 1, numel(checks)), ""));
     for store = stores'

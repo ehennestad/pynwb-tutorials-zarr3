@@ -5,7 +5,9 @@ name: MatNWB reads the Zarr v3 stores correctly
 # MatNWB and compare. Where matnwb-read.yml only checks that nwbRead succeeds, this
 # checks that MatNWB resolves typed objects, soft and external links and object
 # references to the same targets, reads datasets, compound datasets, attributes and
-# table rows with the same values, and reads large datasets lazily. Checks that
+# table rows with the same values, and reads large datasets lazily. The same checks
+# then run with every store read over HTTP from a localhost server that answers
+# Range requests, as S3 and most CDNs do. Checks that
 # MatNWB cannot pass yet are listed, with reasons, in
 # ci/matnwb_content_known_failures.txt.
 #
@@ -80,6 +82,15 @@ jobs:
       - name: Install MatBox
         uses: ehennestad/matbox-actions/install-matbox@v1
 
+      - name: Serve the stores over HTTP on localhost
+        # The server writes its port to server.port once it is listening.
+        run: |
+          mkdir -p results
+          nohup python scripts/serve_directory.py stores server.port results/http-requests.log \
+            > /dev/null 2>&1 &
+          for attempt in $(seq 1 50); do [ -f server.port ] && break; sleep 0.2; done
+          echo "Serving stores/ at http://127.0.0.1:$(cat server.port)"
+
       - name: Compare MatNWB's reading with the manifests
         uses: matlab-actions/run-command@v3
         with:
@@ -94,9 +105,41 @@ jobs:
             addpath(fullfile(zarrRoot, "tools"));
             build_mex();
             addpath("scripts");
-            verifyStoreContents("stores", ManifestDirectory="manifests", ...
-                KnownFailureFile="ci/matnwb_content_known_failures.txt", ...
-                JUnitFile="results/content-checks.xml");
+            % Both passes run even if the first fails, so one run reports both.
+            failures = {};
+            try
+                verifyStoreContents("stores", ManifestDirectory="manifests", ...
+                    KnownFailureFile="ci/matnwb_content_known_failures.txt", ...
+                    JUnitFile="results/content-checks.xml");
+            catch failure
+                failures{end+1} = failure;
+            end
+            try
+                verifyStoreContents("stores", ManifestDirectory="manifests", ...
+                    StoreUrl="http://127.0.0.1:" + strtrim(fileread("server.port")), ...
+                    KnownFailureFile="ci/matnwb_content_known_failures.txt", ...
+                    JUnitFile="results/content-checks-http.xml", ...
+                    Title="MatNWB content check over HTTP");
+            catch failure
+                failures{end+1} = failure;
+            end
+            if ~isempty(failures)
+                cellfun(@(failure) fprintf(2, "%s\n", failure.message), failures);
+                rethrow(failures{1})
+            end
+
+      - name: Report the HTTP requests served
+        if: always()
+        run: |
+          log=results/http-requests.log
+          [ -f "$log" ] || { echo "No requests were logged."; exit 0; }
+          {
+            echo "## HTTP requests served"
+            echo
+            echo "| Status | Requests |"
+            echo "| --- | --- |"
+            cut -d' ' -f1 "$log" | sort | uniq -c | awk '{print "| " $2 " | " $1 " |"}'
+          } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Upload the check report
         if: always()
