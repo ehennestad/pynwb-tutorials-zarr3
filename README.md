@@ -10,12 +10,8 @@ the neurodata types built, the narrative, the section structure -- follows upstr
 
 ## Requirements
 
-Zarr format 3 output is **not available in any released `hdmf-zarr`**: the latest release
-(0.13.0) pins `zarr<3.0`, which writes Zarr format 2. Format 3 requires hdmf-zarr 0.14.0,
-which is [merged](https://github.com/hdmf-dev/hdmf-zarr/pull/325) on the `dev` branch but
-not yet published, so `pyproject.toml` pins that branch directly. Expect this pin to be
-replaced by `hdmf-zarr>=0.14.0` once it is on PyPI. hdmf-zarr 0.14.0 requires Python 3.12
-or newer.
+Zarr format 3 output requires hdmf-zarr 0.14.0 or newer; earlier releases pin `zarr<3.0`,
+which writes Zarr format 2. hdmf-zarr 0.14.0 requires Python 3.12 or newer.
 
 ```bash
 python3 -m venv .venv
