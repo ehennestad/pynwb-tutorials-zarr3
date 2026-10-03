@@ -1,0 +1,8 @@
+# Real-data content checks that MatNWB cannot currently pass.
+#
+# Same format as ci/matnwb_content_known_failures.txt: one "<store> <check>" pair per
+# line, where <check> is a StoreContentsTest method name or "*"; text after "#" is the
+# reason. CI fails if a check outside this list fails, and also if every check an
+# entry covers starts passing.
+#
+# Verified against matnwb zarr-support/5-zarr3-reader on 2026-10-03: no known failures.

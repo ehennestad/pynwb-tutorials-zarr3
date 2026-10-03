@@ -151,6 +151,30 @@ classdef StoreContentsTest < matlab.unittest.TestCase
             end
         end
 
+        function readsDatasetBlocks(testCase)
+        % One block per larger dataset, read through indexing. For a DataStub
+        % this is a partial read that usually spans more than one chunk.
+            for entry = entries(testCase.Manifest.datasets)
+                if ~isfield(entry, "block") || isempty(entry.block)
+                    continue
+                end
+                block = entry.block;
+                label = "dataset " + entry.path + " block [" ...
+                    + strjoin(string(block.start) + ":" + string(block.stop), ",") + ")";
+                value = testCase.resolveDatasetOrFail(entry, label);
+                if isempty(value)
+                    continue
+                end
+                [values, isRead] = testCase.callOrFail(@() readBlock(value, block), label);
+                if ~isRead
+                    continue
+                end
+                testCase.verifyNumElements(values, block.count, label);
+                values = double(values(:));
+                testCase.verifyValue(sum(values(isfinite(values))), block.sum, "numeric", label);
+            end
+        end
+
         function readsDatasetsInFull(testCase)
             for entry = entries(testCase.Manifest.datasets)
                 if ~isfield(entry, "sum") || isempty(entry.sum) ...
@@ -212,7 +236,7 @@ classdef StoreContentsTest < matlab.unittest.TestCase
                         if isstruct(expected) && isfield(expected, "reference")
                             testCase.verifyReference(actual, expected.reference, recordLabel);
                         else
-                            testCase.verifyValue(actual, expected, kindOf(expected), recordLabel);
+                            testCase.verifyValue(actual, expected, kindOf(expected, actual), recordLabel);
                         end
                     end
                 end
@@ -354,7 +378,7 @@ classdef StoreContentsTest < matlab.unittest.TestCase
                     if isnumeric(expected) && ~isvector(expected) && ~isempty(actual)
                         actual = permute(actual, ndims(actual):-1:1);
                     end
-                    testCase.verifyValue(actual, expected, kindOf(expected), label);
+                    testCase.verifyValue(actual, expected, kindOf(expected, actual), label);
                 otherwise
                     testCase.verifyFail(label + ": unknown column kind " + columnKind);
             end
@@ -440,15 +464,36 @@ function element = readElement(value, index, rank)
     element = value(subscripts{:});
 end
 
-function kind = kindOf(expected)
-    if iscell(expected)
-        expected = [expected{:}];
+function values = readBlock(value, block)
+% readBlock - A block given by zero-based numpy start and stop, through indexing.
+    ranges = arrayfun(@(first, last) first+1:last, ...
+        reshape(double(block.start), 1, []), reshape(double(block.stop), 1, []), ...
+        "UniformOutput", false);
+    if numel(ranges) >= 2
+        ranges = fliplr(ranges);
     end
-    if islogical(expected)
+    values = value(ranges{:});
+end
+
+function kind = kindOf(expected, actual)
+% kindOf - Element kind of a manifest value that carries no kind of its own.
+%
+% The manifest writes non-finite numbers as the text "NaN", "Inf" and "-Inf",
+% so text made only of those counts as numeric when MatNWB returns a number.
+    if iscell(expected)
+        elements = expected(:)';
+    else
+        elements = {expected};
+    end
+    isNumber = cellfun(@(v) isnumeric(v) || islogical(v), elements);
+    isNonFiniteText = cellfun(@(v) (ischar(v) || isstring(v)) ...
+        && all(ismember(string(v), ["NaN", "Inf", "-Inf"])), elements);
+    isNumericActual = isnumeric(actual) || islogical(actual);
+    if all(cellfun(@islogical, elements))
         kind = "bool";
-    elseif isnumeric(expected)
+    elseif all(isNumber) || (isNumericActual && all(isNumber | isNonFiniteText))
         kind = "numeric";
-    elseif isstruct(expected)
+    elseif all(cellfun(@isstruct, elements))
         kind = "struct";
     else
         kind = "text";
@@ -525,7 +570,9 @@ end
 function text = describe(value)
     try
         if isstring(value) || ischar(value) || isnumeric(value) || islogical(value)
-            text = "[" + strjoin(string(value(:)'), ", ") + "] (" + class(value) + ")";
+            elements = string(value(:)');
+            elements(ismissing(elements)) = "<missing>";
+            text = "[" + strjoin(elements, ", ") + "] (" + class(value) + ")";
         elseif iscell(value)
             text = "{" + strjoin(cellfun(@(v) describe(v), value(:)'), "; ") + "}";
         else
