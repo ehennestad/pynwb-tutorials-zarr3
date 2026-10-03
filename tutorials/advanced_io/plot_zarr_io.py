@@ -52,7 +52,7 @@ data_with_zarr_data_io = ZarrDataIO(
     data=np.random.randn(100, 100),
     chunks=(10, 10),
     fillvalue=0,
-    compressor=BloscCodec(cname='zstd', clevel=3, shuffle=BloscShuffle.shuffle),
+    compressors=BloscCodec(cname='zstd', clevel=3, shuffle=BloscShuffle.shuffle),
 )
 
 #######################################################################################

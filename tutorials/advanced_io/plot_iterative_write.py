@@ -335,7 +335,7 @@ num_values = num_chunks * np.prod(chunk_shape)
 #
 #    Unlike HDF5, Zarr compresses datasets **by default** (Zstd in zarr-python 3). To get a genuinely
 #    uncompressed baseline to compare against you have to opt out explicitly with
-#    ``compressor=False``, which is what we do for cases 2 and 4 below. Writing the raw
+#    ``compressors=False``, which is what we do for cases 2 and 4 below. Writing the raw
 #    ``SparseMatrixIterator`` without a :py:class:`~hdmf_zarr.utils.ZarrDataIO` wrapper would
 #    silently get the default Zstd compressor.
 from zarr.codecs import GzipCodec
@@ -346,12 +346,12 @@ from hdmf_zarr import ZarrDataIO
 matrix1 = SparseMatrixIterator(
     shape=(xsize, ysize), num_chunks=num_chunks, chunk_shape=chunk_shape
 )
-data = ZarrDataIO(data=matrix1, compressor=False)
+data = ZarrDataIO(data=matrix1, compressors=False)
 
 matrix2 = SparseMatrixIterator(
     shape=(xsize, ysize), num_chunks=num_chunks, chunk_shape=chunk_shape
 )
-data2 = ZarrDataIO(data=matrix2, compressor=GzipCodec(level=4))
+data2 = ZarrDataIO(data=matrix2, compressors=GzipCodec(level=4))
 
 ######################
 # We can now also customize the chunking, fill value, and other settings
@@ -362,7 +362,7 @@ matrix3 = SparseMatrixIterator(
     shape=(xsize, ysize), num_chunks=num_chunks, chunk_shape=chunk_shape
 )
 data3 = ZarrDataIO(
-    data=matrix3, chunks=(100, 100), fillvalue=np.nan, compressor=False
+    data=matrix3, chunks=(100, 100), fillvalue=np.nan, compressors=False
 )
 
 # Increase the chunk size and add compression
@@ -371,7 +371,7 @@ matrix4 = SparseMatrixIterator(
 )
 data4 = ZarrDataIO(
     data=matrix4,
-    compressor=GzipCodec(level=4),
+    compressors=GzipCodec(level=4),
     chunks=(100, 100),
     fillvalue=np.nan,
 )

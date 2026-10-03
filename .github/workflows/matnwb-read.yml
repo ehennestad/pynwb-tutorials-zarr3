@@ -1,11 +1,12 @@
 name: MatNWB reads the Zarr v3 stores
 
-# Cross-backend compatibility probe: write NWB Zarr v3 stores with PyNWB (via the
-# hdmf-zarr zarr-v3-migration branch), then open every one of them with MatNWB's
+# Cross-backend compatibility probe: write NWB Zarr v3 stores with PyNWB (via
+# hdmf-zarr 0.14.0 or newer), then open every one of them with MatNWB's
 # Zarr v3 reader. Stores that MatNWB cannot yet read are listed, with reasons, in
 # ci/matnwb_known_failures.txt.
 #
-# Both sides track moving branches, so this also runs weekly to catch breakage that
+# The MatNWB reader tracks a moving branch and the Python side takes the latest
+# releases, so this also runs weekly to catch breakage that
 # lands upstream rather than here.
 
 on:
@@ -43,18 +44,19 @@ jobs:
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
-          python-version: "3.11"
+          # hdmf-zarr 0.14.0 requires Python 3.12 or newer.
+          python-version: "3.12"
           cache: pip
           cache-dependency-path: pyproject.toml
 
       - name: Install the tutorial environment
-        # Pulls hdmf-zarr from its zarr-v3-migration branch; see pyproject.toml.
         run: |
           python -m pip install --upgrade pip
           python -m pip install -e .
 
       - name: Report resolved versions
-        run: python -m pip list | grep -Ei "^(pynwb|hdmf|hdmf-zarr|zarr|numcodecs|numpy) "
+        # pip lists the package under its distribution name, hdmf_zarr.
+        run: python -m pip list | grep -Ei "^(pynwb|hdmf|hdmf[-_]zarr|zarr|numcodecs|numpy) "
 
       - name: Write the Zarr v3 stores
         # Also asserts that every store declares zarr_format 3 before MatNWB sees it.
