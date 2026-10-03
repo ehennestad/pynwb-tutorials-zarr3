@@ -19,11 +19,11 @@ function verifyStoreContents(storeDirectory, options)
 %      Folder holding the "<store>.manifest.json" files written by
 %      scripts/write_read_manifests.py. Default: storeDirectory.
 %
-%    - KnownFailureFile (string) -
-%      Text file of checks that are expected to fail, one "<store> <check>" pair
+%    - KnownFailureFile (string array) -
+%      Text files of checks that are expected to fail, one "<store> <check>" pair
 %      per line, where <check> is a StoreContentsTest method name or "*" for every
-%      check of that store. Blank lines and text following "#" are ignored.
-%      Default: none.
+%      check of that store. Blank lines and text following "#" are ignored. The
+%      entries of all files are combined. Default: none.
 %
 %    - SummaryFile (string) -
 %      File to append a Markdown result table to, for use as a GitHub Actions job
@@ -47,7 +47,7 @@ function verifyStoreContents(storeDirectory, options)
     arguments
         storeDirectory (1,1) string {mustBeFolder}
         options.ManifestDirectory (1,1) string = storeDirectory
-        options.KnownFailureFile (1,1) string = ""
+        options.KnownFailureFile (1,:) string = string.empty(1, 0)
         options.SummaryFile (1,1) string = string(getenv("GITHUB_STEP_SUMMARY"))
         options.JUnitFile (1,1) string = ""
         options.StoreUrl (1,1) string = ""
@@ -184,17 +184,18 @@ function stale = staleEntries(outcomes, knownFailures)
     end
 end
 
-function knownFailures = readKnownFailures(knownFailureFile)
-% readKnownFailures - "<store> <check>" pairs from the allowlist, ignoring comments.
+function knownFailures = readKnownFailures(knownFailureFiles)
+% readKnownFailures - "<store> <check>" pairs from the allowlists, ignoring comments.
     knownFailures = strings(0, 1);
-    if knownFailureFile == "" || ~isfile(knownFailureFile)
-        return
+    for knownFailureFile = knownFailureFiles(knownFailureFiles ~= "")
+        assert(isfile(knownFailureFile), "NWB:Zarr3Compat:MissingKnownFailureFile", ...
+            "Known-failure file '%s' does not exist.", knownFailureFile)
+        lines = splitlines(string(fileread(knownFailureFile)));
+        lines = strtrim(extractBefore(lines + "#", "#"));
+        lines = lines(lines ~= "");
+        % One space between store and check, however the file separates them.
+        knownFailures = [knownFailures; regexprep(lines(:), "\s+", " ")]; %#ok<AGROW>
     end
-    lines = splitlines(string(fileread(knownFailureFile)));
-    lines = strtrim(extractBefore(lines + "#", "#"));
-    lines = lines(lines ~= "");
-    knownFailures = join(split(lines(:)), " ", 2);
-    knownFailures = reshape(knownFailures, [], 1);
 end
 
 function writeSummary(outcomes, summaryFile, title)
@@ -220,7 +221,7 @@ function writeSummary(outcomes, summaryFile, title)
         end
         fprintf(fileId, "| `%s` | %s |\n", store, strjoin(labels, " | "));
     end
-    fprintf(fileId, "\n`KNOWN` = listed in `ci/matnwb_content_known_failures.txt`. ");
+    fprintf(fileId, "\n`KNOWN` = listed in a known-failure file. ");
     fprintf(fileId, "`FIXED` = listed there but now passing, so the entry is stale. ");
     fprintf(fileId, "Failure details are in the job log.\n");
 end

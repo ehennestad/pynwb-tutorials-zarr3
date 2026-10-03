@@ -1,0 +1,9 @@
+# Content checks that fail only when the stores are read over HTTP, in addition to
+# those in ci/matnwb_content_known_failures.txt. Same format.
+#
+# Verified against matnwb zarr-support/5-zarr3-reader on 2026-10-03.
+
+# Expected. The store is written without consolidated metadata, and an HTTP server
+# cannot be listed, so the hierarchy cannot be browsed. nwbRead fails with
+#   zarr:StoreError -- HTTP stores cannot be listed.
+variant_unconsolidated.nwb.zarr *

@@ -16,3 +16,10 @@ legacy_device_model.nwb.zarr *
 # are read as column cell arrays, so getRow on an AlignedDynamicTable with one column
 # and several categories throws MATLAB:catenate:dimensionMismatch.
 test_icephys_file.nwb.zarr readsTables
+
+# zarr-matlab limitation. zarr-matlab builds an array's codec pipeline when it parses
+# the array's metadata, and nwbRead walks every node's metadata, so one array with a
+# codec zarr-matlab does not implement (here numcodecs.lz4) makes the whole store
+# unreadable, not only that dataset. nwbRead fails with
+#   zarr:UnsupportedCodec -- Unsupported codec 'numcodecs.lz4'.
+variant_lz4.nwb.zarr *
