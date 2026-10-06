@@ -65,6 +65,11 @@ jobs:
       - name: Write the Zarr v3 stores
         run: python scripts/run_zarr_v3_tutorials.py --keep-output stores
 
+      - name: Write stores that use non-default storage options
+        # Sharding, other codecs and data types, missing or stale consolidated
+        # metadata; see the script's docstring.
+        run: python scripts/write_format_variants.py stores
+
       - name: Record what PyNWB reads from each store
         run: python scripts/write_read_manifests.py stores --output manifests
 
@@ -117,7 +122,8 @@ jobs:
             try
                 verifyStoreContents("stores", ManifestDirectory="manifests", ...
                     StoreUrl="http://127.0.0.1:" + strtrim(fileread("server.port")), ...
-                    KnownFailureFile="ci/matnwb_content_known_failures.txt", ...
+                    KnownFailureFile=["ci/matnwb_content_known_failures.txt", ...
+                        "ci/matnwb_content_http_known_failures.txt"], ...
                     JUnitFile="results/content-checks-http.xml", ...
                     Title="MatNWB content check over HTTP");
             catch failure
@@ -133,12 +139,18 @@ jobs:
         run: |
           log=results/http-requests.log
           [ -f "$log" ] || { echo "No requests were logged."; exit 0; }
+          # One row per store: requests answered 200 (whole object), 206 (Range
+          # request) and 404 (absent, e.g. an unwritten chunk).
           {
             echo "## HTTP requests served"
             echo
-            echo "| Status | Requests |"
-            echo "| --- | --- |"
-            cut -d' ' -f1 "$log" | sort | uniq -c | awk '{print "| " $2 " | " $1 " |"}'
+            echo "| Store | 200 | 206 | 404 | Other |"
+            echo "| --- | --- | --- | --- | --- |"
+            awk '{ split($2, parts, "/"); store = parts[2]; stores[store] = 1
+                   if ($1 == 200 || $1 == 206 || $1 == 404) count[store, $1]++; else count[store, "other"]++ }
+                 END { for (store in stores)
+                         printf "| `%s` | %d | %d | %d | %d |\n", store, count[store, 200], count[store, 206],
+                                count[store, 404], count[store, "other"] }' "$log" | sort
           } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Upload the check report
