@@ -6,7 +6,8 @@ the same stores with MatNWB and compares. For every store this records:
 - ``objects``: each typed group and dataset, with its neurodata type and object id;
 - ``links``: each soft or external link and the node it points to;
 - ``references``: each object reference held in an attribute or a reference dataset;
-- ``datasets``: shape, element kind, sum and sampled elements of each dataset;
+- ``datasets``: shape, element kind, sum and sampled elements of each dataset, and for
+  larger numeric datasets the sum over one block that spans a chunk boundary;
 - ``compounds``: sampled records of each compound dataset, with references as paths;
 - ``attributes``: the value of each schema attribute;
 - ``tables``: column names, row count, ids and selected rows of each DynamicTable,
@@ -48,6 +49,11 @@ NUM_NONZERO_SAMPLES = 4
 # sparse arrays whose logical size runs to terabytes. Its sum is not recorded, and its
 # samples are read one element at a time.
 MAX_LOADED_ELEMENTS = 10_000_000
+# Largest block read from a dataset to check a multi-element (and usually multi-chunk)
+# read. Trailing axes are read whole when they hold at most MAX_FULL_TRAILING elements.
+MAX_BLOCK_ELEMENTS = 1_000_000
+MAX_FULL_TRAILING = 10_000
+TRAILING_WINDOW = 100
 # Table rows recorded from the start of each table, in addition to the last row.
 NUM_LEADING_ROWS = 5
 
@@ -128,6 +134,36 @@ def sample_indices(shape: tuple[int, ...], values: np.ndarray) -> list[tuple[int
     return [tuple(int(i) for i in np.unravel_index(index, shape)) for index in linear]
 
 
+def block_window(shape: tuple[int, ...], chunks: tuple[int, ...] | None) -> list[slice]:
+    """A block of at most MAX_BLOCK_ELEMENTS that straddles a chunk boundary of axis 0."""
+    trailing = [n if math.prod(shape[1:]) <= MAX_FULL_TRAILING else min(n, TRAILING_WINDOW) for n in shape[1:]]
+    length = min(shape[0], max(1, MAX_BLOCK_ELEMENTS // max(1, math.prod(trailing))))
+    if chunks and chunks[0] < shape[0]:
+        boundary = max(chunks[0], (shape[0] // 2 // chunks[0]) * chunks[0])
+        start = boundary - length // 2
+    else:
+        start = (shape[0] - length) // 2
+    start = min(max(start, 0), shape[0] - length)
+    window = [slice(start, start + length)]
+    window += [slice((n - w) // 2, (n - w) // 2 + w) for n, w in zip(shape[1:], trailing)]
+    return window
+
+
+def describe_block(array: Any, shape: tuple[int, ...], kind: str) -> dict[str, Any] | None:
+    """Sum over one block of a numeric dataset that is too large to record in full."""
+    if kind not in ("numeric", "bool") or not shape or math.prod(shape) <= MAX_FULL_ELEMENTS:
+        return None
+    chunks = getattr(array, "chunks", None)
+    window = block_window(shape, tuple(chunks) if chunks else None)
+    block = np.asarray(array[tuple(window)]).astype(np.float64)
+    return {
+        "start": [w.start for w in window],
+        "stop": [w.stop for w in window],
+        "count": int(block.size),
+        "sum": float(np.sum(block[np.isfinite(block)])),
+    }
+
+
 def describe_large_array(path: str, array: zarr.Array) -> dict[str, Any]:
     """Describe an array too large to load, from point reads and its written chunks."""
     shape = tuple(int(n) for n in array.shape)
@@ -142,6 +178,7 @@ def describe_large_array(path: str, array: zarr.Array) -> dict[str, Any]:
         "shape": list(shape),
         "count": count,
         "sum": None,
+        "block": describe_block(array, shape, kind),
         "samples": [
             {"index": list(index), "value": encode_element(array[index], kind)}
             for index in sorted(indices)
@@ -167,17 +204,19 @@ def nonzero_indices_in_written_chunks(array: zarr.Array) -> list[tuple[int, ...]
 
 
 def describe_array(path: str, data: Any) -> dict[str, Any]:
+    chunks = getattr(data, "chunks", None)
     values = np.asarray(data[()] if hasattr(data, "shape") else data)
     if values.dtype.kind == "O":
         values = np.vectorize(to_json_scalar, otypes=[object])(values) if values.size else values
     shape = tuple(int(n) for n in values.shape)
     kind = element_kind(values)
     entry: dict[str, Any] = {
-        "path": path, "kind": kind, "shape": list(shape), "count": int(values.size), "sum": None
+        "path": path, "kind": kind, "shape": list(shape), "count": int(values.size), "sum": None, "block": None
     }
     if kind in ("numeric", "bool"):
         finite = values.astype(np.float64)
         entry["sum"] = float(np.sum(finite[np.isfinite(finite)]))
+        entry["block"] = describe_block(_Chunked(values, chunks), shape, kind)
     entry["samples"] = [
         {"index": list(index), "value": encode_element(values[index], kind)}
         for index in sample_indices(shape, values)
@@ -356,6 +395,17 @@ class ManifestWriter:
         )
 
 
+class _Chunked:
+    """An in-memory array that still reports the chunk shape it was stored with."""
+
+    def __init__(self, values: np.ndarray, chunks: Any):
+        self.values = values
+        self.chunks = chunks
+
+    def __getitem__(self, key: Any) -> np.ndarray:
+        return self.values[key]
+
+
 def _element_count(data: Any) -> int:
     shape = getattr(data, "shape", None)
     return int(np.prod(shape)) if shape is not None else 1
@@ -400,7 +450,8 @@ def _row_value(column: Any, index: int) -> Any:
         target = column.target
         if isinstance(target, VectorIndex):
             return [_row_value(target, i) for i in range(start, stop)]
-        return [_plain_value(target.data[i]) for i in range(start, stop)]
+        # One slice read: element-by-element reads would decompress a chunk each.
+        return [_plain_value(value) for value in target.data[start:stop]]
     if isinstance(column, DynamicTableRegion):
         return int(column.data[index])
     return _plain_value(column.data[index])
