@@ -1,0 +1,18 @@
+# Content checks that MatNWB cannot currently pass.
+#
+# One "<store> <check>" pair per line, where <check> is a StoreContentsTest method
+# name, or "*" for every check of that store; text after "#" is the reason. CI fails
+# if a check outside this list fails, and also if every check an entry covers starts
+# passing -- remove the entry when that happens.
+#
+# Verified against matnwb zarr-support/5-zarr3-reader on 2026-10-03.
+
+# Expected. A deliberately synthesised pre-2.9 file whose string Device.model MatNWB
+# rejects; see ci/matnwb_known_failures.txt.
+legacy_device_model.nwb.zarr *
+
+# MatNWB bug, not Zarr-specific (an HDF5 export of the same file fails the same way).
+# types.util.dynamictable.getRow concatenates colnames and categories as rows, but both
+# are read as column cell arrays, so getRow on an AlignedDynamicTable with one column
+# and several categories throws MATLAB:catenate:dimensionMismatch.
+test_icephys_file.nwb.zarr readsTables

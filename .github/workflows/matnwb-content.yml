@@ -1,0 +1,117 @@
+name: MatNWB reads the Zarr v3 stores correctly
+
+# Cross-backend content check: write NWB Zarr v3 stores with PyNWB, record what
+# PyNWB reads back from each one in a JSON manifest, then read every store with
+# MatNWB and compare. Where matnwb-read.yml only checks that nwbRead succeeds, this
+# checks that MatNWB resolves typed objects, soft and external links and object
+# references to the same targets, reads datasets, compound datasets, attributes and
+# table rows with the same values, and reads large datasets lazily. Checks that
+# MatNWB cannot pass yet are listed, with reasons, in
+# ci/matnwb_content_known_failures.txt.
+#
+# Like matnwb-read.yml, this tracks moving upstream branches, so it also runs weekly.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+  schedule:
+    - cron: "0 6 * * 1"  # Mondays, 06:00 UTC
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  MATNWB_REF: zarr-support/5-zarr3-reader
+  MATLAB_RELEASE: R2025b
+
+jobs:
+  check-contents:
+    name: Write with PyNWB, compare MatNWB's reading
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out this repository
+        uses: actions/checkout@v4
+
+      - name: Check out MatNWB (Zarr v3 reader branch)
+        uses: actions/checkout@v4
+        with:
+          repository: NeurodataWithoutBorders/matnwb
+          ref: ${{ env.MATNWB_REF }}
+          path: matnwb
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          # hdmf-zarr 0.14.0 requires Python 3.12 or newer.
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: pyproject.toml
+
+      - name: Install the tutorial environment
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -e .
+
+      - name: Report resolved versions
+        # pip lists the package under its distribution name, hdmf_zarr.
+        run: python -m pip list | grep -Ei "^(pynwb|hdmf|hdmf[-_]zarr|zarr|numcodecs|numpy) "
+
+      - name: Write the Zarr v3 stores
+        run: python scripts/run_zarr_v3_tutorials.py --keep-output stores
+
+      - name: Record what PyNWB reads from each store
+        run: python scripts/write_read_manifests.py stores --output manifests
+
+      - name: Install the codec libraries zarr-matlab links against
+        # zarr-matlab decompresses chunks through a MEX extension built against
+        # libzstd and libblosc.
+        run: sudo apt-get update && sudo apt-get install -y libzstd-dev libblosc-dev
+
+      - name: Set up MATLAB
+        uses: matlab-actions/setup-matlab@v3
+        with:
+          release: ${{ env.MATLAB_RELEASE }}
+          cache: true
+
+      - name: Install MatBox
+        uses: ehennestad/matbox-actions/install-matbox@v1
+
+      - name: Compare MatNWB's reading with the manifests
+        uses: matlab-actions/run-command@v3
+        with:
+          # installRequirements pulls zarr-matlab and hdmf-zarr-matlab (listed in
+          # matnwb/requirements.txt) into the session path. zarr-matlab ships its
+          # MEX codecs unbuilt, so build them before reading. The clones are not
+          # cached: they track moving branches, which this workflow exists to follow.
+          command: |
+            addpath(genpath("matnwb"));
+            matbox.installRequirements("matnwb", SaveSearchPath=false, AgreeToLicenses=true);
+            zarrRoot = fileparts(fileparts(which("zarr.open")));
+            addpath(fullfile(zarrRoot, "tools"));
+            build_mex();
+            addpath("scripts");
+            verifyStoreContents("stores", ManifestDirectory="manifests", ...
+                KnownFailureFile="ci/matnwb_content_known_failures.txt", ...
+                JUnitFile="results/content-checks.xml");
+
+      - name: Upload the check report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: content-check-report
+          path: results/
+          retention-days: 14
+
+      - name: Upload the stores and manifests when a check fails
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: zarr-v3-stores-and-manifests
+          path: |
+            stores/
+            manifests/
+          retention-days: 7
