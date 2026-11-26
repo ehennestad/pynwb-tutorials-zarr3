@@ -1,0 +1,24 @@
+# Stores read from the public S3 bucket by matnwb-remote.yml.
+#
+# Each store and its manifest were uploaded once, under stores/ and
+# stores/manifests/, and are not regenerated: the remote check follows MatNWB's
+# HTTP reading, not hdmf-zarr releases, which the other workflows track.
+#
+# Real data (see scripts/convert_real_datasets.py)
+sub-e16-3m1_ses-e16-3m1-210201.nwb.zarr
+
+# Tutorial stores with links, references, tables and an external link
+ecephys_tutorial.nwb.zarr
+test_icephys_file.nwb.zarr
+ophys_tutorial.nwb.zarr
+external_linkcontainer_example.nwb.zarr
+external1_example.nwb.zarr
+external2_example.nwb.zarr
+
+# Storage variants (see scripts/write_format_variants.py)
+variant_codecs.nwb.zarr
+variant_sharded.nwb.zarr
+variant_lz4.nwb.zarr
+variant_unconsolidated.nwb.zarr
+variant_appended.nwb.zarr
+variant_appended_unconsolidated.nwb.zarr

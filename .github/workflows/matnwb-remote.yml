@@ -1,0 +1,86 @@
+name: MatNWB reads the Zarr v3 stores from S3
+
+# The content check of matnwb-content.yml, with every store read over HTTPS from a
+# public S3 bucket in eu-north-1 instead of from a localhost server. The runner
+# reaches the bucket over the internet, so this measures MatNWB's reading under real
+# latency: the job summary lists the time spent on each store.
+#
+# The stores listed in ci/remote_stores.txt and their manifests were uploaded once
+# and are not regenerated here. The bucket allows anonymous reads under stores/ only;
+# it cannot be listed, so the manifests are fetched by name.
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "0 8 * * 1"  # Mondays, 08:00 UTC
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  MATNWB_REF: zarr-support/5-zarr3-reader
+  MATLAB_RELEASE: R2025b
+  STORE_URL: https://eivihe-nwb-zarr-tests.s3.eu-north-1.amazonaws.com/stores
+
+jobs:
+  check-remote:
+    name: Read the stores from S3 with MatNWB
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out this repository
+        uses: actions/checkout@v4
+
+      - name: Check out MatNWB (Zarr v3 reader branch)
+        uses: actions/checkout@v4
+        with:
+          repository: NeurodataWithoutBorders/matnwb
+          ref: ${{ env.MATNWB_REF }}
+          path: matnwb
+
+      - name: Fetch the manifests
+        run: |
+          mkdir -p remote-manifests
+          grep -v -e '^#' -e '^[[:space:]]*$' ci/remote_stores.txt | while read -r store; do
+            curl --fail --silent --show-error --output "remote-manifests/$store.manifest.json" \
+              "$STORE_URL/manifests/$store.manifest.json"
+          done
+          ls remote-manifests
+
+      - name: Install the codec libraries zarr-matlab links against
+        run: sudo apt-get update && sudo apt-get install -y libzstd-dev libblosc-dev
+
+      - name: Set up MATLAB
+        uses: matlab-actions/setup-matlab@v3
+        with:
+          release: ${{ env.MATLAB_RELEASE }}
+          cache: true
+
+      - name: Install MatBox
+        uses: ehennestad/matbox-actions/install-matbox@v1
+
+      - name: Compare MatNWB's reading with the manifests
+        uses: matlab-actions/run-command@v3
+        with:
+          command: |
+            addpath(genpath("matnwb"));
+            matbox.installRequirements("matnwb", SaveSearchPath=false, AgreeToLicenses=true);
+            zarrRoot = fileparts(fileparts(which("zarr.open")));
+            addpath(fullfile(zarrRoot, "tools"));
+            build_mex();
+            addpath("scripts");
+            verifyStoreContents("", ManifestDirectory="remote-manifests", ...
+                StoreUrl=getenv("STORE_URL"), ...
+                KnownFailureFile=["ci/matnwb_content_known_failures.txt", ...
+                    "ci/matnwb_content_http_known_failures.txt"], ...
+                JUnitFile="results/remote-checks.xml", ...
+                Title="MatNWB content check, stores read from S3 (eu-north-1)");
+
+      - name: Upload the check report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: remote-check-report
+          path: results/
+          retention-days: 14

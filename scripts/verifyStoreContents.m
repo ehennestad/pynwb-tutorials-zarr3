@@ -11,7 +11,8 @@ function verifyStoreContents(storeDirectory, options)
 %
 % Input Arguments:
 %  - storeDirectory (string) -
-%    Folder containing the "*.nwb.zarr" stores.
+%    Folder containing the "*.nwb.zarr" stores. Not used when StoreUrl is
+%    given: the stores are then those with a manifest in ManifestDirectory.
 %
 %  - options (name-value pairs) -
 %
@@ -33,9 +34,10 @@ function verifyStoreContents(storeDirectory, options)
 %      JUnit XML report of every check. Default: none.
 %
 %    - StoreUrl (string) -
-%      URL at which storeDirectory is served over HTTP. When given, each store
-%      is read from "<StoreUrl>/<store>" instead of from disk; storeDirectory
-%      is then only used to list the stores. Default: none.
+%      URL under which the stores are served over HTTP. When given, each store
+%      is read from "<StoreUrl>/<store>" instead of from disk, and the stores
+%      checked are those with a manifest in ManifestDirectory, since a server
+%      cannot be listed. Default: none.
 %
 %    - Title (string) -
 %      Heading of the job summary table. Default: "MatNWB content check".
@@ -45,7 +47,7 @@ function verifyStoreContents(storeDirectory, options)
 % therefore stale.
 
     arguments
-        storeDirectory (1,1) string {mustBeFolder}
+        storeDirectory (1,1) string
         options.ManifestDirectory (1,1) string = storeDirectory
         options.KnownFailureFile (1,:) string = string.empty(1, 0)
         options.SummaryFile (1,1) string = string(getenv("GITHUB_STEP_SUMMARY"))
@@ -60,7 +62,11 @@ function verifyStoreContents(storeDirectory, options)
     import matlab.unittest.plugins.XMLPlugin
 
     knownFailures = readKnownFailures(options.KnownFailureFile);
-    storeNames = storesWithManifests(storeDirectory, options.ManifestDirectory);
+    if options.StoreUrl == ""
+        storeNames = storesWithManifests(storeDirectory, options.ManifestDirectory);
+    else
+        storeNames = storesFromManifests(options.ManifestDirectory);
+    end
     classDirectory = prepareClassDirectory();
 
     % Parameter names must be valid identifiers, so each store is keyed by a
@@ -95,6 +101,8 @@ function verifyStoreContents(storeDirectory, options)
 end
 
 function storeNames = storesWithManifests(storeDirectory, manifestDirectory)
+    assert(isfolder(storeDirectory), "NWB:Zarr3Compat:NoStores", ...
+        "Store folder '%s' does not exist.", storeDirectory)
     listing = dir(fullfile(storeDirectory, "*.nwb.zarr"));
     storeNames = sort(string({listing.name}))';
     hasManifest = arrayfun(@(name) isfile(fullfile(manifestDirectory, name + ".manifest.json")), storeNames);
@@ -104,6 +112,13 @@ function storeNames = storesWithManifests(storeDirectory, manifestDirectory)
         strjoin(missing, ", "), manifestDirectory)
     assert(~isempty(storeNames), "NWB:Zarr3Compat:NoStores", ...
         "No *.nwb.zarr stores found in '%s'. Run the tutorials first.", storeDirectory)
+end
+
+function storeNames = storesFromManifests(manifestDirectory)
+    listing = dir(fullfile(manifestDirectory, "*.nwb.zarr.manifest.json"));
+    storeNames = sort(extractBefore(string({listing.name}), ".manifest.json"))';
+    assert(~isempty(storeNames), "NWB:Zarr3Compat:NoStores", ...
+        "No *.nwb.zarr.manifest.json files found in '%s'.", manifestDirectory)
 end
 
 function classDirectory = prepareClassDirectory()
@@ -139,8 +154,10 @@ function outcomes = classifyResults(suite, results, storeParameters, knownFailur
         check(iResult) = string(suite(iResult).ProcedureName);
     end
     passed = [results.Passed]';
+    durationSeconds = [results.Duration]';
     isKnown = ismember(store + " " + check, knownFailures) | ismember(store + " *", knownFailures);
-    outcomes = table(store, check, passed, isKnown, 'VariableNames', ["Store", "Check", "Passed", "IsKnown"]);
+    outcomes = table(store, check, passed, isKnown, durationSeconds, ...
+        'VariableNames', ["Store", "Check", "Passed", "IsKnown", "Seconds"]);
 end
 
 function reportOutcomes(outcomes, knownFailures, summaryFile, title)
@@ -170,9 +187,15 @@ end
 
 function stale = staleEntries(outcomes, knownFailures)
 % staleEntries - Known-failure entries whose checks all pass.
+%
+% An entry for a store that was not checked is not stale: a run may check a
+% subset of the stores a known-failure file covers.
     stale = strings(0, 1);
     for entry = reshape(knownFailures, 1, [])
         parts = split(entry);
+        if ~any(outcomes.Store == parts(1))
+            continue
+        end
         if parts(2) == "*"
             covered = outcomes.Store == parts(1);
         else
@@ -211,18 +234,20 @@ function writeSummary(outcomes, summaryFile, title)
     checks = unique(outcomes.Check, "stable");
     stores = unique(outcomes.Store);
     fprintf(fileId, "## %s\n\n", title);
-    fprintf(fileId, "| Store | %s |\n", strjoin("`" + checks + "`", " | "));
-    fprintf(fileId, "| --- |%s\n", strjoin(repmat(" --- |", 1, numel(checks)), ""));
+    fprintf(fileId, "| Store | Time (s) | %s |\n", strjoin("`" + checks + "`", " | "));
+    fprintf(fileId, "| --- | --- |%s\n", strjoin(repmat(" --- |", 1, numel(checks)), ""));
     for store = stores'
         labels = strings(1, numel(checks));
         for iCheck = 1:numel(checks)
             row = outcomes(outcomes.Store == store & outcomes.Check == checks(iCheck), :);
             labels(iCheck) = statusLabel(row.Passed, row.IsKnown);
         end
-        fprintf(fileId, "| `%s` | %s |\n", store, strjoin(labels, " | "));
+        storeSeconds = sum(outcomes.Seconds(outcomes.Store == store));
+        fprintf(fileId, "| `%s` | %.0f | %s |\n", store, storeSeconds, strjoin(labels, " | "));
     end
     fprintf(fileId, "\n`KNOWN` = listed in a known-failure file. ");
     fprintf(fileId, "`FIXED` = listed there but now passing, so the entry is stale. ");
+    fprintf(fileId, "Time includes reading the store with nwbRead, which the first check of each store does. ");
     fprintf(fileId, "Failure details are in the job log.\n");
 end
 
