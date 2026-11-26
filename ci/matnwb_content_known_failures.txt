@@ -11,12 +11,6 @@
 # rejects; see ci/matnwb_known_failures.txt.
 legacy_device_model.nwb.zarr *
 
-# MatNWB bug, not Zarr-specific (an HDF5 export of the same file fails the same way).
-# types.util.dynamictable.getRow concatenates colnames and categories as rows, but both
-# are read as column cell arrays, so getRow on an AlignedDynamicTable with one column
-# and several categories throws MATLAB:catenate:dimensionMismatch.
-test_icephys_file.nwb.zarr readsTables
-
 # zarr-matlab limitation. zarr-matlab builds an array's codec pipeline when it parses
 # the array's metadata, and nwbRead walks every node's metadata, so one array with a
 # codec zarr-matlab does not implement (here numcodecs.lz4) makes the whole store
