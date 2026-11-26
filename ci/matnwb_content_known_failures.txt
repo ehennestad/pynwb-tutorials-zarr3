@@ -5,15 +5,14 @@
 # if a check outside this list fails, and also if every check an entry covers starts
 # passing -- remove the entry when that happens.
 #
-# Verified against matnwb zarr-support/5-zarr3-reader on 2026-10-03.
+# Verified against matnwb zarr-support/5-zarr3-reader on 2026-11-23.
 
 # Expected. A deliberately synthesised pre-2.9 file whose string Device.model MatNWB
 # rejects; see ci/matnwb_known_failures.txt.
 legacy_device_model.nwb.zarr *
 
-# zarr-matlab limitation. zarr-matlab builds an array's codec pipeline when it parses
-# the array's metadata, and nwbRead walks every node's metadata, so one array with a
-# codec zarr-matlab does not implement (here numcodecs.lz4) makes the whole store
-# unreadable, not only that dataset. nwbRead fails with
+# zarr-matlab limitation. zarr-matlab does not implement the numcodecs.lz4 codec.
+# nwbRead opens the store, but reading the values of /acquisition/lz4/data fails with
 #   zarr:UnsupportedCodec -- Unsupported codec 'numcodecs.lz4'.
+# so readsDatasetSamples, readsDatasetBlocks and readsDatasetsInFull fail.
 variant_lz4.nwb.zarr *
